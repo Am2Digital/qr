@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#007bff" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <title>Dashboard Admin QR</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
+    import {
+      getFirestore, collection, doc, getDocs, updateDoc, deleteDoc, setDoc
+    } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
+    import QRCode from "https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/esm.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyD3DEpSXS64pvSxOs1sdAZw3Bv81dop00k",
+      authDomain: "am2tech-dashboard.firebaseapp.com",
+      projectId: "am2tech-dashboard"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const table = document.getElementById("qrTable");
+    const chartCanvas = document.getElementById("statsChart").getContext("2d");
+    const generateForm = document.getElementById("generateForm");
+    const newUrl = document.getElementById("newUrl");
+    const output = document.getElementById("outputLink");
+
+    generateForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const id = Math.random().toString(36).substring(2, 8);
+      const shortUrl = `https://github.com/Am2Digital/qr/redirect.html?id=${id}`;
+      await setDoc(doc(db, "qr_links", id), {
+        originalUrl: newUrl.value,
+        shortUrl,
+        createdAt: new Date().toISOString()
+      });
+      await QRCode.toCanvas(document.getElementById("qrcodeCanvas"), shortUrl);
+      output.innerHTML = `<a href="${shortUrl}" target="_blank">${shortUrl}</a>`;
+      newUrl.value = "";
+      loadData();
+    });
+
+    async function loadData() {
+      const snap = await getDocs(collection(db, "qr_links"));
+      table.innerHTML = "";
+      const labels = [], clicks = [];
+
+      for (const d of snap.docs) {
+        const data = d.data();
+        labels.push(d.id);
+        const clickSnap = await getDocs(collection(db, "qr_links", d.id, "clicks"));
+        clicks.push(clickSnap.size);
+
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td><a href="${data.shortUrl}" target="_blank">${d.id}</a></td>
+          <td><input id="input-${d.id}" value="${data.originalUrl}" /></td>
+          <td>${clickSnap.size}</td>
+          <td>
+            <button onclick="updateLink('${d.id}')">💾</button>
+            <button onclick="window.open('${data.shortUrl}', '_blank')">👁️</button>
+            <button onclick="deleteLink('${d.id}')">🗑️</button>
+          </td>
+        `;
+        table.appendChild(row);
+      }
+
+      new Chart(chartCanvas, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{ label: 'Clics', data: clicks, backgroundColor: '#007bff' }]
+        },
+        options: { scales: { y: { beginAtZero: true } } }
+      });
+    }
+
+    window.updateLink = async (id) => {
+      const value = document.getElementById(`input-${id}`).value;
+      await updateDoc(doc(db, "qr_links", id), { originalUrl: value });
+      alert("Lien mis à jour");
+    };
+
+    window.deleteLink = async (id) => {
+      if (confirm("Supprimer ?")) {
+        await deleteDoc(doc(db, "qr_links", id));
+        alert("Supprimé");
+        loadData();
+      }
+    };
+
+    loadData();
+  </script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').then(() => console.log("✅ PWA prête"));
+    }
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      const banner = document.getElementById('installBanner');
+      if (banner) banner.style.display = 'flex';
+    });
+    function installApp() {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then(choice => {
+          if (choice.outcome === 'accepted') {
+            console.log('App installée');
+            document.getElementById('installBanner').style.display = 'none';
+          }
+        });
+      }
+    }
+  </script>
+
+  <style>
+    body { font-family: sans-serif; padding: 1rem; background: #f5f5f5; }
+    table { width: 100%; border-collapse: collapse; background: white; margin-top: 1rem; }
+    th, td { padding: 0.75rem; border: 1px solid #ddd; text-align: left; }
+    th { background: #007bff; color: white; }
+    button { margin: 0 2px; padding: 4px 8px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    input[type=text], input[type=url] { width: 100%; padding: 6px; }
+    #installBanner { display: none; justify-content: space-between; align-items: center; background: #007bff; color: white; padding: 10px; position: fixed; bottom: 0; left: 0; right: 0; z-index: 999; }
+    #installBanner button { background: white; color: #007bff; padding: 6px 12px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+    canvas { margin: 2rem 0; }
+  </style>
+</head>
+
+<body>
+  <!-- Protection par mot de passe -->
+  <div id="accessLock" style="text-align:center; margin-top:50px;">
+    <h2>🔐 Accès réservé</h2>
+    <input type="password" id="passcode" placeholder="Mot de passe" />
+    <button onclick="checkAccess()">Entrer</button>
+  </div>
+
+  <!-- Bannière PWA -->
+  <div id="installBanner">
+    <span>📲 Installer l'application ?</span>
+    <button onclick="installApp()">Ajouter</button>
+  </div>
+
+  <!-- Dashboard principal -->
+  <div id="dashboard">
+    <h1>Dashboard QR</h1>
+    <form id="generateForm">
+      <input id="newUrl" type="url" placeholder="Entrez l'URL" required />
+      <button type="submit">Générer</button>
+    </form>
+    <p id="outputLink"></p>
+<button onclick="downloadQRCode()">📥 Télécharger le QR</button>
+    <canvas id="qrcodeCanvas"></canvas>
+    <canvas id="statsChart"></canvas>
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Destination</th><th>Clics</th><th>Actions</th></tr>
+      </thead>
+      <tbody id="qrTable"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const correctPassword = "azerty123";
+    function checkAccess() {
+      const input = document.getElementById("passcode").value;
+      if (input === correctPassword) {
+        document.getElementById("accessLock").style.display = "none";
+        document.getElementById("dashboard").style.display = "block";
+      } else {
+        alert("Mot de passe incorrect.");
+      }
+    }
+    document.getElementById("dashboard").style.display = "none";
+  </script>
+<script>
+function downloadQRCode() {
+  const canvas = document.getElementById("qrcodeCanvas");
+  const link = document.createElement("a");
+  link.download = "qrcode.png";
+  link.href = canvas.toDataURL("image/png");
+  link.click();
+}
+</script>
+</body>
+</html>

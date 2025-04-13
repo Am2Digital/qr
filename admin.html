@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Admin QR</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
+    import {
+      getFirestore, collection, doc, getDocs, updateDoc, deleteDoc, setDoc, query, orderBy
+    } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
+    import { getAuth, onAuthStateChanged, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyD3DEpSXS64pvSxOs1sdAZw3Bv81dop00k",
+      authDomain: "am2tech-dashboard.firebaseapp.com",
+      projectId: "am2tech-dashboard"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    const loginForm = document.getElementById("loginForm");
+    const dashboard = document.getElementById("dashboard");
+    const startDateInput = document.getElementById("startDate");
+    const endDateInput = document.getElementById("endDate");
+    const filterBtn = document.getElementById("filterBtn");
+    const statsChart = document.getElementById("statsChart").getContext("2d");
+
+    let chart;
+
+    function setDefaultDates() {
+      const today = new Date();
+      const lastWeek = new Date();
+      lastWeek.setDate(today.getDate() - 7);
+      startDateInput.value = lastWeek.toISOString().split('T')[0];
+      endDateInput.value = today.toISOString().split('T')[0];
+    }
+
+    loginForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (err) {
+        alert("Échec de connexion : " + err.message);
+      }
+    });
+
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        loginForm.style.display = "none";
+        dashboard.style.display = "block";
+        setDefaultDates();
+        loadData();
+      } else {
+        loginForm.style.display = "block";
+        dashboard.style.display = "none";
+      }
+    });
+
+    filterBtn.addEventListener("click", () => loadData());
+
+    window.updateLink = async function (docId) {
+      const newUrl = document.getElementById(`input-${docId}`).value;
+      await updateDoc(doc(db, "qr_links", docId), { originalUrl: newUrl });
+      alert("Lien mis à jour ✔️");
+      loadData();
+    }
+
+    window.deleteLink = async function (docId) {
+      if (confirm("Confirmer la suppression ?")) {
+        await deleteDoc(doc(db, "qr_links", docId));
+        alert("Supprimé.");
+        loadData();
+      }
+    }
+
+    async function loadData() {
+      const table = document.getElementById("qrTable");
+      table.innerHTML = "";
+      const snapshot = await getDocs(collection(db, "qr_links"));
+
+      const chartLabels = [];
+      const chartData = [];
+
+      const start = new Date(startDateInput.value);
+      const end = new Date(endDateInput.value);
+      end.setHours(23, 59, 59, 999);
+
+      for (const document of snapshot.docs) {
+        const data = document.data();
+        let clickCount = 0;
+        let lastClick = "-";
+        try {
+          const clicksSnap = await getDocs(query(collection(db, "qr_links", document.id, "clicks"), orderBy("timestamp", "desc")));
+          const filtered = clicksSnap.docs.filter(doc => {
+            const t = doc.data().timestamp;
+            return t >= start && t <= end;
+          });
+          clickCount = filtered.length;
+          if (clickCount > 0) lastClick = new Date(filtered[0].data().timestamp).toLocaleString();
+        } catch {}
+
+        chartLabels.push(document.id);
+        chartData.push(clickCount);
+
+        const row = document.createElement("tr");
+        row.innerHTML = `
+          <td><a href="https://am2tech.fr/qr/${document.id}" target="_blank">/qr/${document.id}</a></td>
+          <td><input type="text" value="${data.originalUrl || ''}" id="input-${document.id}"></td>
+          <td>${clickCount}</td>
+          <td>${lastClick}</td>
+          <td style="display:flex;gap:4px">
+            <button onclick="updateLink('${document.id}')">💾</button>
+            <button onclick="window.open('https://am2tech.fr/qr/${document.id}', '_blank')">👁️</button>
+            <button onclick="deleteLink('${document.id}')" style="background:#dc3545;">🗑️</button>
+          </td>
+        `;
+        table.appendChild(row);
+      }
+
+      if (chart) chart.destroy();
+      chart = new Chart(statsChart, {
+        type: 'bar',
+        data: {
+          labels: chartLabels,
+          datasets: [{
+            label: 'Nombre de clics par QR (filtré)',
+            data: chartData,
+            backgroundColor: 'rgba(0, 123, 255, 0.6)',
+            borderColor: 'rgba(0, 123, 255, 1)',
+            borderWidth: 1
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+  </script>
+  <style>
+    body { font-family: sans-serif; padding: 1rem; background: #f5f5f5; }
+    #filters { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; align-items: center; }
+    #filters input { padding: 4px; }
+    table { width: 100%; border-collapse: collapse; background: white; }
+    th, td { padding: 0.75rem; border: 1px solid #ddd; text-align: left; }
+    th { background: #007bff; color: white; }
+    input[type="text"] { width: 100%; padding: 4px; }
+    button { padding: 4px 8px; border: none; border-radius: 4px; cursor: pointer; background: #007bff; color: white; }
+    button:hover { background: #0056b3; }
+    @media (max-width: 768px) {
+      #filters { flex-direction: column; align-items: flex-start; }
+      table, thead, tbody, th, td, tr { display: block; }
+      thead { display: none; }
+      tr { margin-bottom: 1rem; background: white; padding: 1rem; border-radius: 8px; }
+      td { border: none; padding: 0.5rem 0; }
+      td::before { content: attr(data-label); font-weight: bold; display: block; margin-bottom: 0.25rem; }
+    }
+  </style>
+</head>
+<body>
+  <form id="loginForm" style="max-width:400px;margin:auto;text-align:center;">
+    <h2>Connexion Admin</h2>
+    <input id="email" type="email" placeholder="Email" required><br><br>
+    <input id="password" type="password" placeholder="Mot de passe" required><br><br>
+    <button type="submit">Connexion</button>
+  </form>
+
+  <div id="dashboard" style="display:none">
+    <h1>Dashboard Admin QR</h1>
+
+    <div id="filters">
+      <label>Du : <input type="date" id="startDate"></label>
+      <label>Au : <input type="date" id="endDate"></label>
+      <button id="filterBtn">Filtrer</button>
+    </div>
+
+    <canvas id="statsChart"></canvas>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Lien court</th>
+          <th>Destination</th>
+          <th>Clics</th>
+          <th>Dernier scan</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="qrTable"></tbody>
+    </table>
+  </div>
+</body>
+</html>

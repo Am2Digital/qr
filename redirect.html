@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Redirection...</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
+    import {
+      getFirestore, doc, getDoc, collection, addDoc, serverTimestamp
+    } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyD3DEpSXS64pvSxOs1sdAZw3Bv81dop00k",
+      authDomain: "am2tech-dashboard.firebaseapp.com",
+      projectId: "am2tech-dashboard"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("id");
+
+    async function redirect() {
+      if (!id) return document.body.innerText = "QR invalide";
+
+      const ref = doc(db, "qr_links", id);
+      const snap = await getDoc(ref);
+
+      if (snap.exists()) {
+        const url = snap.data().originalUrl;
+
+        // Log le clic
+        await addDoc(collection(db, "qr_links", id, "clicks"), {
+          timestamp: serverTimestamp()
+        });
+
+        // Redirige
+        window.location.href = url;
+      } else {
+        document.body.innerText = "QR introuvable";
+      }
+    }
+
+    redirect();
+  </script>
+</head>
+<body>
+  <p style="text-align:center">🔁 Redirection en cours...</p>
+</body>
+</html>
